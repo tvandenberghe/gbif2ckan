@@ -6,7 +6,12 @@ a CKAN portal instance.
 
 It's basically a simple bridge between the GBIF API and the CKAN portal API.
 
-For now, it only loads data about a given country, and is therefore better adapted to natial portals.
+Limitations
+===========
+
+- For now, it only loads data about a given country, and is therefore better adapted to national portals.
+- It only loads metadata and not GBIF-mediated data itself (users will have to go to the global GBIF portal)
+- It destroys and recreate data in CKAN on each run (no update of existing datasets/organizations/contacts)
 
 How to use
 ==========

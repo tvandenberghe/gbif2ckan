@@ -252,13 +252,13 @@ def gbif_get_uuids_of_all_deleted_datasets():
 
     return uuids
 
-def get_all_datasets_belgium():
+def get_all_datasets_country(country_code):
     LIMIT=20
     datasets = []
     offset = 0
 
     while True:
-        params={"country":"BE", "limit": LIMIT, "offset": offset}
+        params={"country": country_code, "limit": LIMIT, "offset": offset}
         r = requests.get("http://api.gbif.org/v1/dataset", params=params)
         response = r.json()
 
@@ -282,14 +282,14 @@ def get_all_datasets_belgium():
 
 
 def main():
-    # Get all datasets published in Belgium
+    # Get all datasets published in the country
     print "Get Datasets information from GBIF..."
-    datasets = get_all_datasets_belgium()
+    datasets = get_all_datasets_country(COUNTRY_CODE)
     print "Get list of deleted datasets (to ignore)..."
     uuids_to_ignore = gbif_get_uuids_of_all_deleted_datasets()
     datasets = [d for d in datasets if d.uuid not in uuids_to_ignore]
 
-    # Let's also retreive data about linked organizations
+    # Let's also retrieve data about linked organizations
     print "Get information about linked (publishing) organizations"
     organizations = {}
     for dataset in datasets:

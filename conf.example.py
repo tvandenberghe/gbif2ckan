@@ -1,3 +1,5 @@
+COUNTRY_CODE = "BE"  # The country we want to load the data for...
+
 CKAN_INSTANCE_URL = "http://localhost:5000/"
 ADMIN_API_KEY = "Type your CKAN API admin key here"
 
