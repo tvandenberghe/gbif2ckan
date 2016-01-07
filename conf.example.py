@@ -22,5 +22,6 @@ ORGANIZATION_LOGOS = {
 DATASET_TYPES = {
     'CHECKLIST': 'Checklist',
     'OCCURRENCE': 'Occurrence',
-    'SAMPLING_EVENT': 'Sampling Event'
+    'SAMPLING_EVENT': 'Sampling Event',
+    'METADATA': 'Metadata-only'
 }
