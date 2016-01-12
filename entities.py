@@ -30,7 +30,11 @@ def create_dataset(dataset, all_organizations):
               }
 
     r = make_ckan_api_call("api/action/package_create", params)
-    return r['success']
+
+    if not r['success']:
+        raise CKANAPIException({"message": "Impossible to create dataset",
+                                "dataset": dataset,
+                                "error": r['error']})
 
 def gbif_get_uuids_of_all_deleted_datasets():
     """
