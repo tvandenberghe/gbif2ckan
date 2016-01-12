@@ -1,9 +1,105 @@
+import urlparse
+from collections import namedtuple
+
 from slugify import slugify
 import requests
 
 from utilities import make_ckan_api_call, dataset_title_to_name, CKANAPIException
 
 from conf import ORGANIZATION_LOGOS
+
+# TODO: Create a class for Dataset
+Dataset = namedtuple("Dataset", "publishing_organization_key title description uuid dataset_type")
+
+def create_dataset(dataset, all_organizations):
+    params = {'title': dataset.title,
+              'name': dataset_title_to_name(dataset.title),
+              'notes': dataset.description,
+              'owner_org': all_organizations[dataset.publishing_organization_key].name,
+              'url': urlparse.urljoin("http://www.gbif.org/dataset/", dataset.uuid),
+
+              # Having difficulties adding extras to the dataset.
+              # So far, it works IF the extras parameter is not named extras (myextras is good), and a dict
+              # (not a list of dicts) is passed. It is, however, not shown in the web interface later...
+              #'extras': [{'dataset_type': dataset.dataset_type}]
+
+              # A Heavy but perfectly working solution: add the field via a plugin like in the tutorial:
+              # http://docs.ckan.org/en/latest/extensions/adding-custom-fields.html
+              # Then pass the parameter as a first-class one (title, name, ...) (no list of dicts: just a key and value)
+              'dataset_type': dataset.dataset_type
+              }
+
+    r = make_ckan_api_call("api/action/package_create", params)
+    return r['success']
+
+def gbif_get_uuids_of_all_deleted_datasets():
+    """
+
+    :rtype: set
+    """
+    uuids = set()
+
+    LIMIT = 50
+    offset = 0
+
+    while True:
+        params = {"limit": LIMIT, "offset": offset}
+        r = requests.get("http://api.gbif.org/v1/dataset/deleted/", params=params)
+
+        response = r.json()
+
+        for result in response['results']:
+            uuids.add(result['key'])
+
+        if response['endOfRecords']:
+            break
+
+        offset = offset + LIMIT
+
+    return uuids
+
+def get_all_datasets_country(country_code):
+    LIMIT=20
+    datasets = []
+    offset = 0
+
+    while True:
+        params={"country": country_code, "limit": LIMIT, "offset": offset}
+        r = requests.get("http://api.gbif.org/v1/dataset", params=params)
+        response = r.json()
+
+        for result in response['results']:
+            try:
+                description = result['description']
+            except KeyError:
+                description = ''
+
+            datasets.append(Dataset(publishing_organization_key=result['publishingOrganizationKey'],
+                                    title=result['title'],
+                                    description=description,
+                                    uuid=result['key'],
+                                    dataset_type=result['type']))
+
+        if response['endOfRecords']:
+            break
+
+        offset = offset + LIMIT
+    return datasets
+
+def get_existing_datasets_ckan():
+    # Return list of strings (dataset names)
+    r = make_ckan_api_call("api/action/package_list", {'all_fields': True})
+
+    return r['result']
+
+def purge_all_datasets():
+    for dataset_name in get_existing_datasets_ckan():
+        purge_dataset(dataset_name)
+
+def purge_dataset(dataset_name_or_id):
+    r = make_ckan_api_call("api/action/dataset_purge", {'id': dataset_name_or_id})
+    return r['success']
+
 
 class Group(object):
     def __init__(self, title):
