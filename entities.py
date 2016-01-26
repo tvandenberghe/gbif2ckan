@@ -36,32 +36,6 @@ def create_dataset(dataset, all_organizations):
                                 "dataset": dataset,
                                 "error": r['error']})
 
-def gbif_get_uuids_of_all_deleted_datasets():
-    """
-
-    :rtype: set
-    """
-    uuids = set()
-
-    LIMIT = 50
-    offset = 0
-
-    while True:
-        params = {"limit": LIMIT, "offset": offset}
-        r = requests.get("http://api.gbif.org/v1/dataset/deleted/", params=params)
-
-        response = r.json()
-
-        for result in response['results']:
-            uuids.add(result['key'])
-
-        if response['endOfRecords']:
-            break
-
-        offset = offset + LIMIT
-
-    return uuids
-
 def get_all_datasets_country(country_code):
     LIMIT=20
     datasets = []
@@ -83,6 +57,7 @@ def get_all_datasets_country(country_code):
                                     description=description,
                                     uuid=result['key'],
                                     dataset_type=result['type']))
+            #print ("Loaded datset with UUID " + result['key'] + " " + result['title'])
 
         if response['endOfRecords']:
             break

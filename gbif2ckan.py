@@ -1,5 +1,4 @@
-from entities import (Group, Organization, get_all_datasets_country, gbif_get_uuids_of_all_deleted_datasets,
-                      purge_all_datasets, create_dataset)
+from entities import Group, Organization, get_all_datasets_country, purge_all_datasets, create_dataset
 
 from conf import COUNTRY_CODE, DATASET_TYPES
 
@@ -10,9 +9,7 @@ def main():
     # Get all datasets published in the country
     print "Get Datasets information from GBIF..."
     datasets = get_all_datasets_country(COUNTRY_CODE)
-    print "Get list of deleted datasets (to ignore)..."
-    uuids_to_ignore = gbif_get_uuids_of_all_deleted_datasets()
-    datasets = [d for d in datasets if d.uuid not in uuids_to_ignore]
+    print "{n} datasets found.".format(n=len(datasets))
 
     # Let's also retrieve data about linked organizations
     print "Get information about linked (publishing) organizations"
