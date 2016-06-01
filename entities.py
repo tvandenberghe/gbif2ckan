@@ -9,7 +9,7 @@ from utilities import make_ckan_api_call, dataset_title_to_name, CKANAPIExceptio
 from conf import ORGANIZATION_LOGOS
 
 # TODO: Create a class for Dataset
-Dataset = namedtuple("Dataset", "publishing_organization_key title description uuid dataset_type")
+Dataset = namedtuple("Dataset", "publishing_organization_key title description uuid dataset_type administrative_contact_name metadata_contact")
 
 def create_dataset(dataset, all_organizations):
     params = {'title': dataset.title,
@@ -22,11 +22,15 @@ def create_dataset(dataset, all_organizations):
               # So far, it works IF the extras parameter is not named extras (myextras is good), and a dict
               # (not a list of dicts) is passed. It is, however, not shown in the web interface later...
               #'extras': [{'dataset_type': dataset.dataset_type}]
+              'gbif_uuid': dataset.uuid,
 
               # A Heavy but perfectly working solution: add the field via a plugin like in the tutorial:
               # http://docs.ckan.org/en/latest/extensions/adding-custom-fields.html
               # Then pass the parameter as a first-class one (title, name, ...) (no list of dicts: just a key and value)
-              'dataset_type': dataset.dataset_type
+              'dataset_type': dataset.dataset_type,
+
+              'administrative_contact': dataset.administrative_contact_name,
+              'metadata_contact': dataset.metadata_contact
               }
 
     r = make_ckan_api_call("api/action/package_create", params)
@@ -35,6 +39,31 @@ def create_dataset(dataset, all_organizations):
         raise CKANAPIException({"message": "Impossible to create dataset",
                                 "dataset": dataset,
                                 "error": r['error']})
+
+def _find_primary_contact_of_type(contact_type, contacts_from_api):
+    contact = ""
+
+    for c in contacts_from_api:
+        if c.has_key('type') and c['type'] == contact_type and c['primary'] and c.has_key('firstName') and c.has_key('lastName'):
+            contact = c['firstName'] + " " + c['lastName']
+
+            if c.has_key('position') and len(c['position']) > 0:
+                contact += (' - ' + c['position'][0])
+
+            if c.has_key('email') and len(c['email']) > 0:
+                contact += (' - ' + c['email'][0])
+
+            if c.has_key('phone') and len(c['phone']) > 0:
+                contact += (' - ' + c['phone'][0])
+
+    return contact
+
+
+def _prepare_contacts(contacts_from_api):
+    administrative_contact = _find_primary_contact_of_type('ADMINISTRATIVE_POINT_OF_CONTACT', contacts_from_api)
+    metadata_contact = _find_primary_contact_of_type('METADATA_AUTHOR', contacts_from_api)
+
+    return administrative_contact, metadata_contact
 
 def get_all_datasets_country(country_code):
     LIMIT=20
@@ -52,11 +81,16 @@ def get_all_datasets_country(country_code):
             except KeyError:
                 description = ''
 
+            administrative_contact, metadata_contact = _prepare_contacts(result['contacts'])
+
+
             datasets.append(Dataset(publishing_organization_key=result['publishingOrganizationKey'],
                                     title=result['title'],
                                     description=description,
                                     uuid=result['key'],
-                                    dataset_type=result['type']))
+                                    dataset_type=result['type'],
+                                    administrative_contact_name=administrative_contact,
+                                    metadata_contact=metadata_contact))
             #print ("Loaded datset with UUID " + result['key'] + " " + result['title'])
 
         if response['endOfRecords']:
@@ -77,20 +111,26 @@ def purge_all_datasets():
 
 def purge_dataset(dataset_name_or_id):
     r = make_ckan_api_call("api/action/dataset_purge", {'id': dataset_name_or_id})
-    return r['success']
+
+    if not r['success']:
+        raise CKANAPIException({"message": "Impossible to create dataset",
+                                "dataset": dataset,
+                                "error": r['error']})
 
 
 class Group(object):
-    def __init__(self, title):
+    def __init__(self, title, logo_url=None ):
         self.title = title
         self.name = slugify(self.title)
         self.attached_datasets = []
+        self.logo_url = logo_url
 
     def create_in_ckan(self):
         # Document is incorrect regarding packages: we need an id parameter, that in fact receive the dataset name... confusing.
         params = {'name': self.name,
                   'title': self.title,
-                  'packages': [{'id': dataset_title_to_name(dataset.title)} for dataset in self.attached_datasets]
+                  'packages': [{'id': dataset_title_to_name(dataset.title)} for dataset in self.attached_datasets],
+                  'image_url': self.logo_url
                   }
 
         r = make_ckan_api_call("api/action/group_create", params)

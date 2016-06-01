@@ -1,6 +1,6 @@
 from entities import Group, Organization, get_all_datasets_country, purge_all_datasets, create_dataset
 
-from conf import COUNTRY_CODE, DATASET_TYPES
+from conf import COUNTRY_CODE, DATASET_INFO
 
 # TODO: Test more for API errors and throw exceptions
 
@@ -50,7 +50,7 @@ def main():
 
     # For each type, create a dedicated group
     for dataset_type, datasets in datasets_by_type.iteritems():
-        g = Group(DATASET_TYPES[dataset_type])
+        g = Group(DATASET_INFO[dataset_type]['name'], DATASET_INFO[dataset_type]['logo_url'])
         [g.attach_dataset(d) for d in datasets]
         g.create_in_ckan()
 
