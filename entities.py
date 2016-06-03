@@ -9,7 +9,7 @@ from utilities import make_ckan_api_call, dataset_title_to_name, CKANAPIExceptio
 from conf import ORGANIZATION_LOGOS
 
 # TODO: Create a class for Dataset
-Dataset = namedtuple("Dataset", "publishing_organization_key title description uuid dataset_type administrative_contact_name metadata_contact")
+Dataset = namedtuple("Dataset", "publishing_organization_key title description uuid dataset_type administrative_contact_full administrative_contact_name metadata_contact")
 
 def create_dataset(dataset, all_organizations):
     params = {'title': dataset.title,
@@ -29,7 +29,8 @@ def create_dataset(dataset, all_organizations):
               # Then pass the parameter as a first-class one (title, name, ...) (no list of dicts: just a key and value)
               'dataset_type': dataset.dataset_type,
 
-              'administrative_contact': dataset.administrative_contact_name,
+              'administrative_contact': dataset.administrative_contact_full,
+              'administrative_contact_name': dataset.administrative_contact_name,
               'metadata_contact': dataset.metadata_contact
               }
 
@@ -42,10 +43,12 @@ def create_dataset(dataset, all_organizations):
 
 def _find_primary_contact_of_type(contact_type, contacts_from_api):
     contact = ""
+    contact_name = ""
 
     for c in contacts_from_api:
         if c.has_key('type') and c['type'] == contact_type and c['primary'] and c.has_key('firstName') and c.has_key('lastName'):
-            contact = c['firstName'] + " " + c['lastName']
+            contact_name = c['firstName'] + " " + c['lastName']
+            contact = contact_name
 
             if c.has_key('position') and len(c['position']) > 0:
                 contact += (' - ' + c['position'][0])
@@ -56,14 +59,14 @@ def _find_primary_contact_of_type(contact_type, contacts_from_api):
             if c.has_key('phone') and len(c['phone']) > 0:
                 contact += (' - ' + c['phone'][0])
 
-    return contact
+    return contact, contact_name
 
 
 def _prepare_contacts(contacts_from_api):
-    administrative_contact = _find_primary_contact_of_type('ADMINISTRATIVE_POINT_OF_CONTACT', contacts_from_api)
-    metadata_contact = _find_primary_contact_of_type('METADATA_AUTHOR', contacts_from_api)
+    administrative_contact_full, administrative_contact_name = _find_primary_contact_of_type('ADMINISTRATIVE_POINT_OF_CONTACT', contacts_from_api)
+    metadata_contact_full, metadata_contact_name = _find_primary_contact_of_type('METADATA_AUTHOR', contacts_from_api)
 
-    return administrative_contact, metadata_contact
+    return administrative_contact_full, administrative_contact_name,  metadata_contact_full, metadata_contact_name
 
 def get_all_datasets_country(country_code):
     LIMIT=20
@@ -81,7 +84,7 @@ def get_all_datasets_country(country_code):
             except KeyError:
                 description = ''
 
-            administrative_contact, metadata_contact = _prepare_contacts(result['contacts'])
+            administrative_contact, administrative_contact_name, metadata_contact, metadata_contact_name = _prepare_contacts(result['contacts'])
 
 
             datasets.append(Dataset(publishing_organization_key=result['publishingOrganizationKey'],
@@ -89,9 +92,9 @@ def get_all_datasets_country(country_code):
                                     description=description,
                                     uuid=result['key'],
                                     dataset_type=result['type'],
-                                    administrative_contact_name=administrative_contact,
+                                    administrative_contact_full=administrative_contact,
+                                    administrative_contact_name=administrative_contact_name,
                                     metadata_contact=metadata_contact))
-            #print ("Loaded datset with UUID " + result['key'] + " " + result['title'])
 
         if response['endOfRecords']:
             break
