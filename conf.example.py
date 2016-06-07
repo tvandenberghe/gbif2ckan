@@ -26,3 +26,4 @@ DATASET_INFO = {
     'OCCURRENCE': {'name': 'Occurrence', 'logo_url': 'https://c1.staticflickr.com/3/2445/3919289329_b6760414a8_b_d.jpg'},
     'SAMPLING_EVENT': {'name': 'Sampling Event', 'logo_url': 'https://dataset.readthedocs.org/en/latest/_static/dataset-logo.png'},
     'METADATA': {'name': 'Metadata-only', 'logo_url': 'https://dataset.readthedocs.org/en/latest/_static/dataset-logo.png'}
+}
