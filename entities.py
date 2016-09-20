@@ -9,7 +9,7 @@ from utilities import make_ckan_api_call, dataset_title_to_name, CKANAPIExceptio
 from conf import ORGANIZATION_LOGOS
 
 # TODO: Create a class for Dataset
-Dataset = namedtuple("Dataset", "publishing_organization_key title description uuid dataset_type administrative_contact_full administrative_contact_name metadata_contact")
+Dataset = namedtuple("Dataset", "publishing_organization_key title description uuid dataset_type administrative_contact_full administrative_contact_name metadata_contact dwca_url website")
 
 def create_dataset(dataset, all_organizations):
     params = {'title': dataset.title,
@@ -31,8 +31,13 @@ def create_dataset(dataset, all_organizations):
 
               'administrative_contact': dataset.administrative_contact_full,
               'administrative_contact_name': dataset.administrative_contact_name,
-              'metadata_contact': dataset.metadata_contact
+              'metadata_contact': dataset.metadata_contact,
               }
+
+    if dataset.dwca_url:
+        params['dwca_url'] = dataset.dwca_url
+    if dataset.website:
+        params['dataset_website'] = dataset.website
 
     r = make_ckan_api_call("api/action/package_create", params)
 
@@ -86,6 +91,16 @@ def get_all_datasets_country(country_code):
 
             administrative_contact, administrative_contact_name, metadata_contact, metadata_contact_name = _prepare_contacts(result['contacts'])
 
+            dwca_url = None
+            for e in result['endpoints']:
+                if e['type'] == 'DWC_ARCHIVE':
+                    dwca_url = e['url']
+                    break
+
+            try:
+                homepage = result['homepage']
+            except KeyError:
+                homepage = ''
 
             datasets.append(Dataset(publishing_organization_key=result['publishingOrganizationKey'],
                                     title=result['title'],
@@ -94,7 +109,9 @@ def get_all_datasets_country(country_code):
                                     dataset_type=result['type'],
                                     administrative_contact_full=administrative_contact,
                                     administrative_contact_name=administrative_contact_name,
-                                    metadata_contact=metadata_contact))
+                                    metadata_contact=metadata_contact,
+                                    dwca_url=dwca_url,
+                                    website=homepage))
 
         if response['endOfRecords']:
             break
@@ -117,7 +134,7 @@ def purge_dataset(dataset_name_or_id):
 
     if not r['success']:
         raise CKANAPIException({"message": "Impossible to create dataset",
-                                "dataset": dataset,
+                                "dataset": dataset_name_or_id,
                                 "error": r['error']})
 
 

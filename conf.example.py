@@ -7,7 +7,7 @@ ADMIN_API_KEY = "Type your CKAN API admin key here"
 
 ORGANIZATION_LOGOS = {
     '37e82b90-1e21-11de-ab90-f72009d2669b': 'http://ias.biodiversity.be/pics/BBPf.png', # BeBIF provider
-    '05c249d0-dfa0-11d8-b22e-b8a03c50a862': 'http://www.marinebiology.ugent.be/sites/marinebiology.ugent.be/files/public/images/logo/logo_marbiol_transp_150.gif',
+    '05c249d0-dfa0-11d8-b22e-b8a03c50a862': 'http://www.books-not-bombs.com/content/images/schools/ugent.png',
     '1cd669d0-80ea-11de-a9d0-f1765f95f18b': 'https://www.inbo.be/sites/all/themes/bootstrap_inbo/img/inbo/logo.png',
     'a344ee9f-f1b7-4761-be2c-58ee6d741395': 'http://www.botanicgarden.be/PUBLIC/IMAGES/ICONS/Logo_UK_groen1_trans.gif',
     'e88c96a3-5884-4e51-a580-e417ca4c9eed': 'http://projects.biodiversity.be/openuprbins/static/img/logo_rbins.gif',
