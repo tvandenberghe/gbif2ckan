@@ -1,4 +1,4 @@
-import urlparse
+from urllib.parse import urljoin
 from collections import namedtuple
 
 from slugify import slugify
@@ -16,7 +16,7 @@ def create_dataset(dataset, all_organizations):
               'name': dataset_title_to_name(dataset.title),
               'notes': dataset.description,
               'owner_org': all_organizations[dataset.publishing_organization_key].name,
-              'url': urlparse.urljoin("http://www.gbif.org/dataset/", dataset.uuid),
+              'url': urljoin("http://www.gbif.org/dataset/", dataset.uuid),
 
               # Having difficulties adding extras to the dataset.
               # So far, it works IF the extras parameter is not named extras (myextras is good), and a dict
@@ -51,17 +51,17 @@ def _find_primary_contact_of_type(contact_type, contacts_from_api):
     contact_name = ""
 
     for c in contacts_from_api:
-        if c.has_key('type') and c['type'] == contact_type and c['primary'] and c.has_key('firstName') and c.has_key('lastName'):
+        if 'type' in c and c['type'] == contact_type and c['primary'] and 'firstName' in c and 'lastName' in c:
             contact_name = c['firstName'] + " " + c['lastName']
             contact = contact_name
 
-            if c.has_key('position') and len(c['position']) > 0:
+            if 'position' in c and len(c['position']) > 0:
                 contact += (' - ' + c['position'][0])
 
-            if c.has_key('email') and len(c['email']) > 0:
+            if 'email' in c and len(c['email']) > 0:
                 contact += (' - ' + c['email'][0])
 
-            if c.has_key('phone') and len(c['phone']) > 0:
+            if 'phone' in c and len(c['phone']) > 0:
                 contact += (' - ' + c['phone'][0])
 
     return contact, contact_name

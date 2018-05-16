@@ -7,12 +7,12 @@ from conf import COUNTRY_CODE, DATASET_INFO
 
 def main():
     # Get all datasets published in the country
-    print "Get Datasets information from GBIF..."
+    print("Get Datasets information from GBIF...")
     datasets = get_all_datasets_country(COUNTRY_CODE)
-    print "{n} datasets found.".format(n=len(datasets))
+    print("{n} datasets found.".format(n=len(datasets)))
 
     # Let's also retrieve data about linked organizations
-    print "Get information about linked (publishing) organizations"
+    print("Get information about linked (publishing) organizations")
     organizations = {}
     for dataset in datasets:
         organization_key = dataset.publishing_organization_key
@@ -20,25 +20,25 @@ def main():
             organizations[organization_key] = Organization.from_gbif_api(organization_key)
 
 
-    print "CKAN: purge all datasets"
+    print("CKAN: purge all datasets")
     purge_all_datasets()
 
-    print "CKAN: purge all organizations"
+    print("CKAN: purge all organizations")
     Organization.purge_all()
 
-    print "CKAN: purge all groups"
+    print("CKAN: purge all groups")
     Group.purge_all()
 
     # Create organizations:
-    print "CKAN: create organizations"
-    for uuid, organization in organizations.iteritems():
+    print("CKAN: create organizations")
+    for uuid, organization in organizations.items():
         organization.create_in_ckan()
 
-    print "CKAN: create datasets"
+    print("CKAN: create datasets")
     for dataset in datasets:
         create_dataset(dataset, organizations)
 
-    print "CKAN: Create a group for each dataset type..."
+    print("CKAN: Create a group for each dataset type...")
 
     # Sort datasets by type
     datasets_by_type = {}
@@ -49,7 +49,7 @@ def main():
             datasets_by_type[d.dataset_type].append(d)
 
     # For each type, create a dedicated group
-    for dataset_type, datasets in datasets_by_type.iteritems():
+    for dataset_type, datasets in datasets_by_type.items():
         g = Group(DATASET_INFO[dataset_type]['name'], DATASET_INFO[dataset_type]['logo_url'])
         [g.attach_dataset(d) for d in datasets]
         g.create_in_ckan()

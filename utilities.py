@@ -1,4 +1,4 @@
-import urlparse
+from urllib.parse import urljoin
 import requests
 from slugify import slugify
 
@@ -14,7 +14,7 @@ def make_ckan_api_call(action_url, params=None):
     if not params:
         params = {}
 
-    url = urlparse.urljoin(CKAN_INSTANCE_URL, action_url)
+    url = urljoin(CKAN_INSTANCE_URL, action_url)
     headers = {'Authorization': ADMIN_API_KEY}
 
     r = requests.post(url, json=params, headers=headers)
