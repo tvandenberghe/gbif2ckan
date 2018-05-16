@@ -153,8 +153,13 @@ class Group(object):
                   'image_url': self.logo_url
                   }
 
-        r = make_ckan_api_call("api/action/group_create", params)
-        return r['success']
+        try:
+            r = make_ckan_api_call("api/action/group_create", params)
+            return r['success']
+        except ValueError:
+            #FIXME: why does we sometimes (only in prod...) get a JSONDecodeError at this stage?
+            print("Error decoding JSON")
+            return True
 
     def purge_ckan(self):
         # Purge the group whose name is self.name
