@@ -1,6 +1,6 @@
-from entities import Group, Organization, get_all_datasets_country, purge_all_datasets, create_dataset
+from entities import Dataset, Group, Organization
 
-from conf import COUNTRY_CODE, DATASET_INFO
+from conf import COUNTRY_CODE, DATASET_INFO,NETWORK_UUID
 
 # TODO: Test more for API errors and throw exceptions
 
@@ -8,7 +8,8 @@ from conf import COUNTRY_CODE, DATASET_INFO
 def main():
     # Get all datasets published in the country
     print("Get Datasets information from GBIF...")
-    datasets = get_all_datasets_country(COUNTRY_CODE)
+    #datasets = Dataset.get_all_datasets_country(COUNTRY_CODE)
+    datasets = Dataset.get_all_datasets_network(NETWORK_UUID)
     print("{n} datasets found.".format(n=len(datasets)))
 
     # Let's also retrieve data about linked organizations
@@ -21,13 +22,13 @@ def main():
 
 
     print("CKAN: purge all datasets")
-    purge_all_datasets()
+    Dataset.purge_ckan_all()
 
     print("CKAN: purge all organizations")
-    Organization.purge_all()
+    Organization.purge_ckan_all()
 
     print("CKAN: purge all groups")
-    Group.purge_all()
+    Group.purge_ckan_all()
 
     # Create organizations:
     print("CKAN: create organizations")
@@ -36,7 +37,7 @@ def main():
 
     print("CKAN: create datasets")
     for dataset in datasets:
-        create_dataset(dataset, organizations)
+        dataset.create_in_ckan(organizations)
 
     print("CKAN: Create a group for each dataset type...")
 
