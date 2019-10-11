@@ -8,8 +8,12 @@ from utilities import make_ckan_api_call, dataset_title_to_name, CKANAPIExceptio
 
 from conf import ORGANIZATION_LOGOS
 
+GBIF_API_LIMIT = 20
+
 # TODO: Create a class for Dataset
-Dataset = namedtuple("Dataset", "publishing_organization_key title description uuid dataset_type administrative_contact_full administrative_contact_name metadata_contact dwca_url website")
+Dataset = namedtuple("Dataset",
+                     "publishing_organization_key title description uuid dataset_type administrative_contact_full administrative_contact_name metadata_contact dwca_url website")
+
 
 def create_dataset(dataset, all_organizations):
     params = {'title': dataset.title,
@@ -21,7 +25,7 @@ def create_dataset(dataset, all_organizations):
               # Having difficulties adding extras to the dataset.
               # So far, it works IF the extras parameter is not named extras (myextras is good), and a dict
               # (not a list of dicts) is passed. It is, however, not shown in the web interface later...
-              #'extras': [{'dataset_type': dataset.dataset_type}]
+              # 'extras': [{'dataset_type': dataset.dataset_type}]
               'gbif_uuid': dataset.uuid,
 
               # A Heavy but perfectly working solution: add the field via a plugin like in the tutorial:
@@ -40,11 +44,12 @@ def create_dataset(dataset, all_organizations):
         params['dataset_website'] = dataset.website
 
     r = make_ckan_api_call("api/action/package_create", params)
+    if r is not None:
+        if not r['success']:
+            raise CKANAPIException({"message": "Impossible to create dataset",
+                                    "dataset": dataset,
+                                    "error": r['error']})
 
-    if not r['success']:
-        raise CKANAPIException({"message": "Impossible to create dataset",
-                                "dataset": dataset,
-                                "error": r['error']})
 
 def _find_primary_contact_of_type(contact_type, contacts_from_api):
     contact = ""
@@ -68,66 +73,83 @@ def _find_primary_contact_of_type(contact_type, contacts_from_api):
 
 
 def _prepare_contacts(contacts_from_api):
-    administrative_contact_full, administrative_contact_name = _find_primary_contact_of_type('ADMINISTRATIVE_POINT_OF_CONTACT', contacts_from_api)
+    administrative_contact_full, administrative_contact_name = _find_primary_contact_of_type(
+        'ADMINISTRATIVE_POINT_OF_CONTACT', contacts_from_api)
     metadata_contact_full, metadata_contact_name = _find_primary_contact_of_type('METADATA_AUTHOR', contacts_from_api)
 
-    return administrative_contact_full, administrative_contact_name,  metadata_contact_full, metadata_contact_name
+    return administrative_contact_full, administrative_contact_name, metadata_contact_full, metadata_contact_name
+
+
+def get_all_datasets_network(network_uuid):
+    datasets = []
+    params = {"limit": GBIF_API_LIMIT}
+    r = requests.get("http://api.gbif.org/v1/network/" + network_uuid + "/constituents", params=params)
+    datasets.append(gbif_to_ckan_dataset(r.json()))
+    return datasets
+
 
 def get_all_datasets_country(country_code):
-    LIMIT=20
     datasets = []
     offset = 0
-
+    params = {"country": country_code, "limit": GBIF_API_LIMIT}
+    r = requests.get("http://api.gbif.org/v1/dataset", params=params,offset)
     while True:
-        params={"country": country_code, "limit": LIMIT, "offset": offset}
-        r = requests.get("http://api.gbif.org/v1/dataset", params=params)
-        response = r.json()
+        for single_gbif_dataset_json in r.json()['results']:
+            datasets.append(gbif_to_ckan_dataset(single_gbif_dataset_json))
+        if gbif_dataset_json['endOfRecords']:
+            break
+        offset = offset + GBIF_API_LIMIT
 
-        for result in response['results']:
-            try:
-                description = result['description']
-            except KeyError:
-                description = ''
 
-            administrative_contact, administrative_contact_name, metadata_contact, metadata_contact_name = _prepare_contacts(result['contacts'])
+    return datasets
 
-            dwca_url = None
-            for e in result['endpoints']:
-                if e['type'] == 'DWC_ARCHIVE':
-                    dwca_url = e['url']
-                    break
 
-            try:
-                homepage = result['homepage']
-            except KeyError:
-                homepage = ''
+def gbif_to_ckan_dataset(single_gbif_dataset_json):
+    try:
+        description = single_gbif_dataset_json['description']
+    except KeyError:
+        description = ''
 
-            datasets.append(Dataset(publishing_organization_key=result['publishingOrganizationKey'],
-                                    title=result['title'],
-                                    description=description,
-                                    uuid=result['key'],
-                                    dataset_type=result['type'],
-                                    administrative_contact_full=administrative_contact,
-                                    administrative_contact_name=administrative_contact_name,
-                                    metadata_contact=metadata_contact,
-                                    dwca_url=dwca_url,
-                                    website=homepage))
+    administrative_contact, administrative_contact_name, metadata_contact, metadata_contact_name = _prepare_contacts(
+        single_gbif_dataset_json['contacts'])
 
-        if response['endOfRecords']:
+    dwca_url = None
+    for e in single_gbif_dataset_json['endpoints']:
+        if e['type'] == 'DWC_ARCHIVE':
+            dwca_url = e['url']
             break
 
-        offset = offset + LIMIT
-    return datasets
+    try:
+        homepage = single_gbif_dataset_json['homepage']
+    except KeyError:
+        homepage = ''
+    return Dataset(publishing_organization_key=single_gbif_dataset_json['publishingOrganizationKey'],
+                   title=single_gbif_dataset_json['title'],
+                   description=description,
+                   uuid=single_gbif_dataset_json['key'],
+                   dataset_type=single_gbif_dataset_json['type'],
+                   administrative_contact_full=administrative_contact,
+                   administrative_contact_name=administrative_contact_name,
+                   metadata_contact=metadata_contact,
+                   dwca_url=dwca_url,
+                   website=homepage)
+
 
 def get_existing_datasets_ckan():
     # Return list of strings (dataset names)
     r = make_ckan_api_call("api/action/package_list", {'all_fields': True})
+    if r is not None:
+        return r['result']
+    else:
+        return None
 
-    return r['result']
 
 def purge_all_datasets():
-    for dataset_name in get_existing_datasets_ckan():
-        purge_dataset(dataset_name)
+    datasets = get_existing_datasets_ckan()
+    if datasets is not None:
+        for dataset_name in datasets:
+            purge_dataset(dataset_name)
+
 
 def purge_dataset(dataset_name_or_id):
     r = make_ckan_api_call("api/action/dataset_purge", {'id': dataset_name_or_id})
@@ -139,7 +161,7 @@ def purge_dataset(dataset_name_or_id):
 
 
 class Group(object):
-    def __init__(self, title, logo_url=None ):
+    def __init__(self, title, logo_url=None):
         self.title = title
         self.name = slugify(self.title)
         self.attached_datasets = []
@@ -155,9 +177,10 @@ class Group(object):
 
         try:
             r = make_ckan_api_call("api/action/group_create", params)
-            return r['success']
+            if r is not None:
+                return r['success']
         except ValueError:
-            #FIXME: why does we sometimes (only in prod...) get a JSONDecodeError at this stage?
+            # FIXME: why does we sometimes (only in prod...) get a JSONDecodeError at this stage?
             print("Error decoding JSON")
             return True
 
@@ -172,14 +195,15 @@ class Group(object):
     @classmethod
     def purge_all(cls):
         groups = cls.get_existing_groups_ckan()
-        for g in groups:
-            g.purge_ckan()
+        if groups is not None:
+            for g in groups:
+                g.purge_ckan()
 
     @classmethod
     def get_existing_groups_ckan(cls):
         r = make_ckan_api_call("api/action/group_list", {'all_fields': True})
-
-        return [cls(res['title']) for res in r['result']]
+        if r is not None:
+            return [cls(res['title']) for res in r['result']]
 
 
 class OrganizationContact(object):
@@ -199,7 +223,6 @@ class OrganizationContact(object):
         phone = json.get('phone')
 
         return cls(fn, ln, email, contact_type, phone)
-
 
     def for_display(self):
         # Returns a tuple of strings: (contact_type, contact_info)
@@ -267,13 +290,14 @@ class Organization(object):
 
                   # API documentation about extras is unclear, but this works:
                   'extras': extras
-                   }
+                  }
 
         if self.description:
             params['description'] = self.description
 
         r = make_ckan_api_call("api/action/organization_create", params)
-        return r['success']
+        if r is not None:
+            return r['success']
 
     @classmethod
     def from_gbif_api(cls, uuid):
@@ -296,11 +320,11 @@ class Organization(object):
     def purge_all(cls):
         """
         Purge all organizations from the CKAN instance.
-
         """
         orgs = cls.get_existing_organizations_ckan()
-        for org in orgs:
-            org.purge_ckan()
+        if orgs is not None:
+            for org in orgs:
+                org.purge_ckan()
 
     def purge_ckan(self):
         r = make_ckan_api_call("api/action/organization_purge", {'id': self.key})
@@ -312,4 +336,5 @@ class Organization(object):
     @classmethod
     def get_existing_organizations_ckan(cls):
         r = make_ckan_api_call("api/action/organization_list", {'all_fields': True})
-        return [cls(res['id'], res['title']) for res in r['result']]
+        if r is not None:
+            return [cls(res['id'], res['title']) for res in r['result']]
