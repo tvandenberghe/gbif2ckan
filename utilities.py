@@ -1,6 +1,7 @@
 from urllib.parse import urljoin
 import requests
 from slugify import slugify
+import json
 
 # TODO: Hmmm,importing the conf here is not clean.
 from conf import *
@@ -11,6 +12,10 @@ MAX_DATASET_NAME_LENGTH = 100  # Ckan limitation
 class CKANAPIException(Exception):
     pass
 
+class Object:
+    def toJSON(self):
+        return json.dumps(self, default=lambda o: o.__dict__,
+            sort_keys=True, indent=4)
 
 def make_ckan_api_call(action_url, params=None):
     if not params:
