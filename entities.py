@@ -17,9 +17,12 @@ GBIF_API_LIMIT = 20
 
 class Dataset(object):
 
-    def __init__(self, title, gbif_uuid, id, dwca_url, dataset_type, description, publishing_organization_key,
-                 administrative_contact_full, administrative_contact_name, metadata_contact_full, metadata_contact_name,
-                 originator_full, originator_name, website, resources, metadata_modified, metadata_created, keywords):
+    def __init__(self, title, gbif_uuid, id, dwca_url=None, dataset_type=None, description=None, publishing_organization_key=None,
+                 administrative_contact_full=None, administrative_contact_name=None, metadata_contact_full=None, metadata_contact_name=None,
+                 originator_full=None, originator_name=None, website=None, resources=None, metadata_modified=None, metadata_created=None,
+                 maintenance_frequency=None, keywords=None, license_id=None, northbound_lat=None, southbound_lat=None, eastbound_lon=None,
+                 westbound_lon=None, geo_desc=None, start_datetime=None, end_datetime=None, doi=None, doi_gbif=None, study_extent=None, quality_control=None, method_steps=None
+                 ):
         self.title = title
         self.name = dataset_title_to_name(self.title)
         self.gbif_uuid = gbif_uuid
@@ -38,7 +41,21 @@ class Dataset(object):
         self.resources = resources
         self.metadata_modified = metadata_modified
         self.metadata_created = metadata_created
+        self.maintenance_frequency = maintenance_frequency
         self.keywords = keywords
+        self.license_id = license_id
+        self.northbound_lat = northbound_lat
+        self.southbound_lat = southbound_lat
+        self.eastbound_lon = eastbound_lon
+        self.westbound_lon = westbound_lon
+        self.geo_desc = geo_desc
+        self.start_datetime = start_datetime
+        self.end_datetime = end_datetime
+        self.doi = doi
+        self.doi_gbif = doi_gbif
+        self.study_extent=study_extent
+        self.quality_control=quality_control
+        self.method_steps=method_steps
 
     def __hash__(self):
         return hash(self.gbif_uuid)
@@ -46,29 +63,54 @@ class Dataset(object):
     def __eq__(self, other):
         return self.__class__ == other.__class__ and self.gbif_uuid == other.uuid
 
+    @staticmethod
+    def bounds_to_geojson(northbound_lat, southbound_lat, eastbound_lon, westbound_lon, geo_desc):
+        if northbound_lat is None or southbound_lat is None or eastbound_lon is None or westbound_lon is None:
+            return None
+        else:
+            c = ','
+            lb = '['
+            rb = ']'
+            bl = lb + str(westbound_lon) + c + str(southbound_lat) + rb
+            br = lb + str(eastbound_lon) + c + str(southbound_lat) + rb
+            tr = lb + str(eastbound_lon) + c + str(northbound_lat) + rb
+            tl = lb + str(westbound_lon) + c + str(northbound_lat) + rb
+            e = bl
+            return lb + lb + bl + c + br + c + tr + c + tl + c + e + rb + rb
+
     def create_in_ckan(self, all_organizations):
         params = {'title': self.title,
-                  'name': self.id,
-                  'gbif_uuid': self.gbif_uuid,
-                  'dwca_url': self.dwca_url,
+                  'name': self.id,  # ie the IPT identifier
+                  'id': self.gbif_uuid,  # ie the GBIF uuio becomes the internal CKAN identifier
                   'dataset_type': self.dataset_type,
                   'notes': self.description,
                   'owner_org': all_organizations[self.publishing_organization_key].name,
                   'url': urljoin("http://www.gbif.org/dataset/", self.gbif_uuid),
-                  'metadata_modified': self.metadata_modified,
-                  'metadata_created': self.metadata_created,
+
                   'administrative_contact_full': self.administrative_contact_full,
                   'administrative_contact_name': self.administrative_contact_name,
                   'metadata_contact_full': self.metadata_contact_full,
                   'metadata_contact_name': self.metadata_contact_name,
                   'originator_full': self.originator_full,
                   'originator_name': self.originator_name,
-                  'custom_text': 'TEST BLABLA3'
-                  }
+                  'eml_created': self.metadata_created,
+                  'eml_modified': self.metadata_modified,
+                  'maintenance_frequency': self.maintenance_frequency,
+                  'start_datetime':self.start_datetime,
+                  'end_datetime':self.end_datetime,
+                  'geo_desc': self.geo_desc,
+                  'doi':self.doi,
+                  'doi_gbif': self.doi_gbif,
+                  'study_extent' : self.study_extent,
+                  'quality_control' : self.quality_control}
         if self.dwca_url:
             params['dwca_url'] = self.dwca_url
         if self.website:
             params['dataset_website'] = self.website
+        geo_json = self.bounds_to_geojson(northbound_lat=self.northbound_lat, southbound_lat=self.southbound_lat,
+                                          eastbound_lon=self.eastbound_lon, westbound_lon=self.westbound_lon, geo_desc=self.geo_desc)
+        if geo_json is not None:
+            params['extras'] = [{'key': 'spatial', 'value': '{"type": "Polygon","coordinates": ' + geo_json + ',"properties": {"name": "Dinagat Islands"}}'}]
         improved_complex_keywords = []
         improved_simple_keywords = []
         for keyword in self.keywords:
@@ -79,19 +121,34 @@ class Dataset(object):
                 else:
                     improved_complex_keywords.append(keyword)
         params['tags'] = [{'name': k.name, 'vocabulary_id': k.vocabulary_id} for k in improved_complex_keywords]
-        #params['tags'] = params['tags'].append([{'name': k.name} for k in improved_simple_keywords])
+        #       params['tags'] = params['tags'].append([{'name': k.name} for k in improved_simple_keywords])
+        if license is not None:
+            params['license_id'] = self.license_id
+        if self.method_steps is not None:
+            r=''
+            for i in range(len(self.method_steps)):
+                r=r+str(i+1)+'. '+self.method_steps[i]+'\n'
+            if r != '':
+                params['method_steps']= r
         r = make_ckan_api_call("api/action/package_create", params)
         if r is not None:
             if not r['success']:
                 raise CKANAPIException({"message": "Impossible to create dataset",
                                         "dataset": self,
                                         "error": r['error']})
+
+        # params={} #reset everything
+        # params['id'] = self.gbif_uuid
+        # params['metadata_created']= self.metadata_created
+        # params['metadata_modified']= self.metadata_modified
+        # r = make_ckan_api_call("api/action/package_update", params)
+
         for resource in self.resources:
             Resource.create_in_ckan(resource)
 
     def get_all_datasets_network(network_uuid):
         datasets = set([])
-        for dataset in Dataset.gbif_to_datasets("http://api.gbif.org/v1/network/" + network_uuid + "/constituents"):
+        for dataset in Dataset.gbif_to_datasets("http://api.gbif.org/v1/network/" + network_uuid + "/constituents",{},True):
             r = requests.get("http://api.gbif.org/v1/dataset/" + dataset.gbif_uuid)
             datasets.add(Dataset.gbif_to_dataset(r.json()))
         return datasets
@@ -100,7 +157,7 @@ class Dataset(object):
         params = {"country": country_code}
         return Dataset.gbif_to_datasets("http://api.gbif.org/v1/dataset", params=params)
 
-    def gbif_to_datasets(url, params={}):
+    def gbif_to_datasets(url, params={}, simple = False):
         datasets = set([])
         offset = 0
         params['limit'] = GBIF_API_LIMIT
@@ -109,20 +166,42 @@ class Dataset(object):
             r = requests.get(url, params=params)
             response = r.json()
             for result in response['results']:
-                datasets.add(Dataset.gbif_to_dataset(result))
+                if simple:
+                    datasets.add(Dataset.gbif_to_simple_dataset(result))
+                else:
+                    datasets.add(Dataset.gbif_to_dataset(result))
             if response['endOfRecords']:
                 break
             offset = offset + GBIF_API_LIMIT
         return datasets
+
+    def gbif_to_simple_dataset(single_gbif_dataset_json):
+        gbif_uuid = single_gbif_dataset_json['key']
+        return Dataset(title='', gbif_uuid=gbif_uuid, id=None)
 
     def gbif_to_dataset(single_gbif_dataset_json):
         title = single_gbif_dataset_json['title']
         gbif_uuid = single_gbif_dataset_json['key']
         metadata_created = single_gbif_dataset_json['created']
         metadata_modified = single_gbif_dataset_json['modified']
+        doi = 'http://doi.org'+single_gbif_dataset_json['doi']
+        doi_gbif = None
         dwca_url = None
         ipt_id = None
         resource_creation_date = None
+        keywords = []
+        license_id = None
+        northbound_lat = None
+        southbound_lat = None
+        eastbound_lon = None
+        westbound_lon = None
+        geo_desc=None
+        start_datetime=None
+        end_datetime=None
+        study_extent = None
+        quality_control = None
+        method_steps = []
+        maintenance_frequency = None
 
         for e in single_gbif_dataset_json['endpoints']:
             if e['type'] == 'DWC_ARCHIVE':
@@ -146,7 +225,9 @@ class Dataset(object):
         for i in single_gbif_dataset_json['identifiers']:
             if i['type'] == 'URL' and ipt_id in i['identifier']:
                 resource_creation_date = i['created']
-        keywords = []
+            if i['type'] == 'DOI':
+                doi_gbif = 'http://doi.org'+i['identifier']
+
         for kc in single_gbif_dataset_json['keywordCollections']:
             for k in kc['keywords']:
                 keyword = Keyword(name=k, vocabulary_id=kc['thesaurus'] if kc['thesaurus'] is not None else None)
@@ -155,19 +236,48 @@ class Dataset(object):
         ipt_resource = Resource(package_id=ipt_id, url=dwca_url, format='zipped DwC archive',
                                 created=resource_creation_date, description="DarwinCore archive for " + ipt_id)
         gbif_occurrence_page = Resource(package_id=ipt_id,
-                                        url='https://www.gbif.org/occurrence/search?dataset_key=' + gbif_uuid,
-                                        format='html page on GBIF', description="Occurrences as shown on GBIF")
+                                        url='https://www.gbif.org/dataset/' + gbif_uuid,
+                                        format='html page on GBIF', description="GBIF dataset page")
         resources = [ipt_resource, gbif_occurrence_page]
         dataset_type = single_gbif_dataset_json['type']
         try:
             description = single_gbif_dataset_json['description']
         except KeyError:
-            description = ''
+            description = None
+        sampling_description =  single_gbif_dataset_json.get('samplingDescription')
+        if sampling_description is not None:
+            study_extent = sampling_description.get('studyExtent')
+            quality_control = sampling_description.get('qualityControl')
+            method_steps = sampling_description.get('methodSteps')
+
+        maintenance_frequency = single_gbif_dataset_json.get('maintenanceUpdateFrequency')
 
         administrative_contact_full, administrative_contact_name, metadata_contact_full, metadata_contact_name, originator_full, originator_name = Dataset._prepare_contacts(
             single_gbif_dataset_json['contacts'])
         publishing_organization_key = single_gbif_dataset_json['publishingOrganizationKey']
+        license_url = single_gbif_dataset_json['license']
+        if 'by-nc' in license_url:
+            license_id = 'cc-by-nc'
+        elif 'by' in license_url:
+            license_id = 'cc-by'
+        elif 'zero' in license_url:
+            license_id = 'cc-zero'
 
+        if len(single_gbif_dataset_json['temporalCoverages']) > 0:
+            start_datetime = single_gbif_dataset_json['temporalCoverages'][0]['start'].split('T')[0]
+            end_datetime = single_gbif_dataset_json['temporalCoverages'][0]['end'].split('T')[0]
+        if len(single_gbif_dataset_json['geographicCoverages']) > 0:
+            geo_cov = single_gbif_dataset_json['geographicCoverages'][0]
+            geo_desc = geo_cov['description']
+            northbound_lat = geo_cov['boundingBox']['maxLatitude']
+            southbound_lat = geo_cov['boundingBox']['minLatitude']
+            eastbound_lon = geo_cov['boundingBox']['maxLongitude']
+            westbound_lon = geo_cov['boundingBox']['minLongitude']
+            if geo_cov['boundingBox']['globalCoverage']:
+                northbound_lat = 90
+                southbound_lat = -90
+                eastbound_lon = 180
+                westbound_lon = -180
         try:
             homepage = single_gbif_dataset_json['homepage']
         except KeyError:
@@ -185,7 +295,22 @@ class Dataset(object):
                        resources=resources,
                        metadata_created=metadata_created,
                        metadata_modified=metadata_modified,
-                       keywords=keywords)
+                       maintenance_frequency=maintenance_frequency,
+                       keywords=keywords,
+                       license_id=license_id,
+                       northbound_lat=northbound_lat,
+                       southbound_lat=southbound_lat,
+                       eastbound_lon=eastbound_lon,
+                       westbound_lon=westbound_lon,
+                       geo_desc=geo_desc,
+                       start_datetime=start_datetime,
+                       end_datetime=end_datetime,
+                       doi=(doi),
+                       doi_gbif=doi_gbif,
+                       study_extent=study_extent,
+                       quality_control = quality_control,
+                       method_steps = method_steps
+        )
 
     @staticmethod
     def get_existing_datasets_ckan():
@@ -464,8 +589,9 @@ class Resource(object):
 
 
 class Keyword(object):
-    def __init__(self, name, vocabulary_id=None):
+    def __init__(self, name, id=None, vocabulary_id=None):
         self.name = name
+        self.id = id
         if vocabulary_id is not None and vocabulary_id.lower() != 'n/a':
             self.vocabulary_id = vocabulary_id
         else:
@@ -475,7 +601,7 @@ class Keyword(object):
         params = {}
         r = None
         if self.name is not None:
-            temp=self.vocabulary_id
+            temp = self.vocabulary_id
             if self.vocabulary_id is not None:
                 v = Vocabulary(name=self.vocabulary_id, tags=[self])
                 vocabulary = v.create_or_update_in_ckan()
@@ -494,6 +620,30 @@ class Keyword(object):
             print("Couldn't create keyword as it is empty")
         return self
 
+    @classmethod
+    def get_existing_keywords_ckan(cls):
+        r = make_ckan_api_call("api/action/vocabulary_list", {'all_fields': True})
+        result = []
+        if r is not None:
+            for res in r['result']:
+                for tag in res['tags']:
+                    result.append(Keyword(name=tag['name'], id=tag["id"], vocabulary_id=tag['vocabulary_id']))
+        return result
+
+    @classmethod
+    def purge_ckan_all(cls):
+        keywords = cls.get_existing_keywords_ckan()
+        if keywords is not None:
+            for keyword in keywords:
+                keyword.purge_ckan()
+
+    def purge_ckan(self):
+        r = make_ckan_api_call("api/action/tag_delete", {'id': self.id})
+        if not r['success']:
+            raise CKANAPIException({"message": "Impossible to purge tag",
+                                    "tag_id": self.name,
+                                    "reason": r['error']['message']})
+
 
 class Vocabulary(object):
     def __init__(self, name, tags, id=None):
@@ -505,32 +655,39 @@ class Vocabulary(object):
         existing_vocab = self.get_from_ckan()
         if existing_vocab is not None:
             self.id = existing_vocab.id
-            params = {'id': self.id, 'name': self.name, 'tags': existing_vocab.tags+[{'name': k.name, 'vocabulary_id': self.id} for k in self.tags]}
-            # params['id'] = existing_vocab.id
-
+            params = {'id': self.id, 'name': self.name,
+                      'tags': existing_vocab.tags + [{'name': k.name, 'vocabulary_id': self.id} for k in self.tags]}
             r = make_ckan_api_call("api/action/vocabulary_update", params)
-            print("Tried updating vocab " + self.name)
         else:
             params = {'name': self.name, 'tags': [{'name': k.name} for k in self.tags]}
             r = make_ckan_api_call("api/action/vocabulary_create", params)
-            # if r is not None and r['success']:
-            #    self.id=r['result']['id']
-            print("Tried creating vocab " + self.name)
         if r is not None:
             if not r['success']:
                 print("Couldn't create/update vocabulary " + self.name)
         return self
 
-    def exists_in_ckan(self):
-        params = {'id': self.name}
-        r = make_ckan_api_call("api/action/vocabulary_show", params)
-        if r is not None:
-            return r['success']
-
     def get_from_ckan(self):
         params = {'id': self.name}
         r = make_ckan_api_call("api/action/vocabulary_show", params)
-        if r is not None:
+        if r['success'] and r['result'] is not None:
             return Vocabulary(id=r['result']['id'], name=r['result']['name'], tags=r['result']['tags'])
-        else:
-            a = 5
+
+    @classmethod
+    def get_existing_vocabularies_ckan(cls):
+        r = make_ckan_api_call("api/action/vocabulary_list", {'all_fields': True})
+        if r is not None:
+            return [Vocabulary(id=res['id'], name=res['name'], tags=res['tags']) for res in r['result']]
+
+    @classmethod
+    def purge_ckan_all(cls):
+        vocabs = cls.get_existing_vocabularies_ckan()
+        if vocabs is not None:
+            for vocab in vocabs:
+                vocab.purge_ckan()
+
+    def purge_ckan(self):
+        r = make_ckan_api_call("api/action/vocabulary_delete", {'id': self.id})
+        if not r['success']:
+            raise CKANAPIException({"message": "Impossible to purge vocabulary",
+                                    "vocabulary_id": self.id,
+                                    "reason": r['error']['message']})

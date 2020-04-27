@@ -1,4 +1,4 @@
-from entities import Dataset, Group, Organization
+from entities import Dataset, Group, Organization, Vocabulary, Keyword
 
 from conf import COUNTRY_CODE, DATASET_INFO,NETWORK_UUID
 
@@ -29,6 +29,12 @@ def main():
 
     print("CKAN: purge all groups")
     Group.purge_ckan_all()
+
+    print("CKAN: purge all keywords")
+    Keyword.purge_ckan_all()
+
+    print("CKAN: purge all vocabularies")
+    Vocabulary.purge_ckan_all()
 
     # Create organizations:
     print("CKAN: create organizations")
