@@ -1,7 +1,7 @@
 COUNTRY_CODE = "BE"  # The country we want to load the data for...
-
+NETWORK_UUID=""
 CKAN_INSTANCE_URL = "http://localhost:5000/"
-ADMIN_API_KEY = "Type your CKAN API admin key here"
+ADMIN_API_KEY = ""
 
 # Additional data (not from GBIF) used to populate the CKAN instance:
 

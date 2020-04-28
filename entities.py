@@ -1,6 +1,6 @@
 from urllib.parse import urljoin, urlparse, parse_qs
-from collections import namedtuple
 
+import jsonpickle as jsonpickle
 from slugify import slugify
 import requests
 import json
@@ -11,17 +11,13 @@ from conf import ORGANIZATION_LOGOS
 
 GBIF_API_LIMIT = 20
 
-
-# TODO: Create a class for Dataset
-# Dataset = namedtuple("Dataset", "publishing_organization_key title description uuid dataset_type administrative_contact_full administrative_contact_name metadata_contact dwca_url website")
-
 class Dataset(object):
 
     def __init__(self, title, gbif_uuid, id, dwca_url=None, dataset_type=None, description=None, publishing_organization_key=None,
                  administrative_contact_full=None, administrative_contact_name=None, metadata_contact_full=None, metadata_contact_name=None,
                  originator_full=None, originator_name=None, website=None, resources=None, metadata_modified=None, metadata_created=None,
                  maintenance_frequency=None, keywords=None, license_id=None, northbound_lat=None, southbound_lat=None, eastbound_lon=None,
-                 westbound_lon=None, geo_desc=None, start_datetime=None, end_datetime=None, doi=None, doi_gbif=None, study_extent=None, quality_control=None, method_steps=None
+                 westbound_lon=None, geo_desc=None, start_datetime=None, end_datetime=None, metadata_taxa=None, actual_taxa = None, occurrences=None, doi=None, doi_gbif=None, study_extent=None, quality_control=None, method_steps=None
                  ):
         self.title = title
         self.name = dataset_title_to_name(self.title)
@@ -51,6 +47,9 @@ class Dataset(object):
         self.geo_desc = geo_desc
         self.start_datetime = start_datetime
         self.end_datetime = end_datetime
+        self.metadata_taxa = metadata_taxa
+        self.actual_taxa = actual_taxa
+        self.occurrences = occurrences
         self.doi = doi
         self.doi_gbif = doi_gbif
         self.study_extent=study_extent
@@ -99,6 +98,9 @@ class Dataset(object):
                   'start_datetime':self.start_datetime,
                   'end_datetime':self.end_datetime,
                   'geo_desc': self.geo_desc,
+                  'taxonomic_coverage':json.dumps(self.metadata_taxa),
+                  'actual_taxa':json.dumps(self.actual_taxa),
+                  'occurrences': jsonpickle.encode(self.occurrences),
                   'doi':self.doi,
                   'doi_gbif': self.doi_gbif,
                   'study_extent' : self.study_extent,
@@ -110,7 +112,7 @@ class Dataset(object):
         geo_json = self.bounds_to_geojson(northbound_lat=self.northbound_lat, southbound_lat=self.southbound_lat,
                                           eastbound_lon=self.eastbound_lon, westbound_lon=self.westbound_lon, geo_desc=self.geo_desc)
         if geo_json is not None:
-            params['extras'] = [{'key': 'spatial', 'value': '{"type": "Polygon","coordinates": ' + geo_json + ',"properties": {"name": "Dinagat Islands"}}'}]
+            params['extras'] = [{'key': 'spatial', 'value': '{"type": "Polygon","coordinates": ' + geo_json + '}'}]
         improved_complex_keywords = []
         improved_simple_keywords = []
         for keyword in self.keywords:
@@ -121,7 +123,6 @@ class Dataset(object):
                 else:
                     improved_complex_keywords.append(keyword)
         params['tags'] = [{'name': k.name, 'vocabulary_id': k.vocabulary_id} for k in improved_complex_keywords]
-        #       params['tags'] = params['tags'].append([{'name': k.name} for k in improved_simple_keywords])
         if license is not None:
             params['license_id'] = self.license_id
         if self.method_steps is not None:
@@ -136,7 +137,6 @@ class Dataset(object):
                 raise CKANAPIException({"message": "Impossible to create dataset",
                                         "dataset": self,
                                         "error": r['error']})
-
         # params={} #reset everything
         # params['id'] = self.gbif_uuid
         # params['metadata_created']= self.metadata_created
@@ -176,15 +176,16 @@ class Dataset(object):
         return datasets
 
     def gbif_to_simple_dataset(single_gbif_dataset_json):
-        gbif_uuid = single_gbif_dataset_json['key']
+        gbif_uuid = single_gbif_dataset_json.get('key')
         return Dataset(title='', gbif_uuid=gbif_uuid, id=None)
 
     def gbif_to_dataset(single_gbif_dataset_json):
-        title = single_gbif_dataset_json['title']
-        gbif_uuid = single_gbif_dataset_json['key']
-        metadata_created = single_gbif_dataset_json['created']
-        metadata_modified = single_gbif_dataset_json['modified']
-        doi = 'http://doi.org'+single_gbif_dataset_json['doi']
+        description = None
+        title = single_gbif_dataset_json.get('title')
+        gbif_uuid = single_gbif_dataset_json.get('key')
+        metadata_created = single_gbif_dataset_json.get('created')
+        metadata_modified = single_gbif_dataset_json.get('modified')
+        doi = 'http://doi.org'+single_gbif_dataset_json.get('doi')
         doi_gbif = None
         dwca_url = None
         ipt_id = None
@@ -202,8 +203,11 @@ class Dataset(object):
         quality_control = None
         method_steps = []
         maintenance_frequency = None
+        metadata_taxa = []
+        actual_taxa = set()
+        occurrences = []
 
-        for e in single_gbif_dataset_json['endpoints']:
+        for e in single_gbif_dataset_json.get('endpoints'):
             if e['type'] == 'DWC_ARCHIVE':
                 dwca_url = e['url']
                 try:
@@ -222,13 +226,13 @@ class Dataset(object):
                 except KeyError:
                     print("No identifier found in original ABCD archive for '" + title + "'")
                 break
-        for i in single_gbif_dataset_json['identifiers']:
+        for i in single_gbif_dataset_json.get('identifiers'):
             if i['type'] == 'URL' and ipt_id in i['identifier']:
                 resource_creation_date = i['created']
             if i['type'] == 'DOI':
                 doi_gbif = 'http://doi.org'+i['identifier']
 
-        for kc in single_gbif_dataset_json['keywordCollections']:
+        for kc in single_gbif_dataset_json.get('keywordCollections'):
             for k in kc['keywords']:
                 keyword = Keyword(name=k, vocabulary_id=kc['thesaurus'] if kc['thesaurus'] is not None else None)
                 keywords.append(keyword)
@@ -239,11 +243,9 @@ class Dataset(object):
                                         url='https://www.gbif.org/dataset/' + gbif_uuid,
                                         format='html page on GBIF', description="GBIF dataset page")
         resources = [ipt_resource, gbif_occurrence_page]
-        dataset_type = single_gbif_dataset_json['type']
-        try:
-            description = single_gbif_dataset_json['description']
-        except KeyError:
-            description = None
+        dataset_type = single_gbif_dataset_json.get('type')
+
+        description = single_gbif_dataset_json.get('description')
         sampling_description =  single_gbif_dataset_json.get('samplingDescription')
         if sampling_description is not None:
             study_extent = sampling_description.get('studyExtent')
@@ -253,9 +255,9 @@ class Dataset(object):
         maintenance_frequency = single_gbif_dataset_json.get('maintenanceUpdateFrequency')
 
         administrative_contact_full, administrative_contact_name, metadata_contact_full, metadata_contact_name, originator_full, originator_name = Dataset._prepare_contacts(
-            single_gbif_dataset_json['contacts'])
-        publishing_organization_key = single_gbif_dataset_json['publishingOrganizationKey']
-        license_url = single_gbif_dataset_json['license']
+            single_gbif_dataset_json.get('contacts'))
+        publishing_organization_key = single_gbif_dataset_json.get('publishingOrganizationKey')
+        license_url = single_gbif_dataset_json.get('license')
         if 'by-nc' in license_url:
             license_id = 'cc-by-nc'
         elif 'by' in license_url:
@@ -263,11 +265,11 @@ class Dataset(object):
         elif 'zero' in license_url:
             license_id = 'cc-zero'
 
-        if len(single_gbif_dataset_json['temporalCoverages']) > 0:
-            start_datetime = single_gbif_dataset_json['temporalCoverages'][0]['start'].split('T')[0]
-            end_datetime = single_gbif_dataset_json['temporalCoverages'][0]['end'].split('T')[0]
-        if len(single_gbif_dataset_json['geographicCoverages']) > 0:
-            geo_cov = single_gbif_dataset_json['geographicCoverages'][0]
+        if len(single_gbif_dataset_json.get('temporalCoverages')) > 0:
+            start_datetime = single_gbif_dataset_json.get('temporalCoverages')[0]['start'].split('T')[0]
+            end_datetime = single_gbif_dataset_json.get('temporalCoverages')[0]['end'].split('T')[0]
+        if len(single_gbif_dataset_json.get('geographicCoverages')) > 0:
+            geo_cov = single_gbif_dataset_json.get('geographicCoverages')[0]
             geo_desc = geo_cov['description']
             northbound_lat = geo_cov['boundingBox']['maxLatitude']
             southbound_lat = geo_cov['boundingBox']['minLatitude']
@@ -278,10 +280,20 @@ class Dataset(object):
                 southbound_lat = -90
                 eastbound_lon = 180
                 westbound_lon = -180
-        try:
-            homepage = single_gbif_dataset_json['homepage']
-        except KeyError:
-            homepage = ''
+        for tc in single_gbif_dataset_json.get('taxonomicCoverages'):
+            for c in tc['coverages']:
+                metadata_taxa.append(c['scientificName'].replace('"',''))
+        homepage = single_gbif_dataset_json.get('homepage')
+        dataset_key_param = {"datasetKey": gbif_uuid,"limit":1000}
+        os = requests.get("http://api.gbif.org/v1/occurrence/search", params=dataset_key_param)
+        response = os.json()
+        for r in response['results']:
+            occ= Occurrence(r.get('scientificName'),r.get('taxonKey'), r.get('eventDate'), r.get('decimalLongitude'), r.get('decimalLatitude'))
+            occurrences.append(occ)
+
+        occurrences.sort(key=lambda x: x.taxon, reverse=False)
+        for occ in occurrences:
+            actual_taxa.add(occ.taxon)
         return Dataset(title=title, gbif_uuid=gbif_uuid, id=ipt_id, dwca_url=dwca_url, dataset_type=dataset_type,
                        description=description,
                        publishing_organization_key=publishing_organization_key,
@@ -305,11 +317,15 @@ class Dataset(object):
                        geo_desc=geo_desc,
                        start_datetime=start_datetime,
                        end_datetime=end_datetime,
+                       metadata_taxa=metadata_taxa,
+                       actual_taxa=actual_taxa,
+                       occurrences=occurrences,
                        doi=(doi),
                        doi_gbif=doi_gbif,
                        study_extent=study_extent,
                        quality_control = quality_control,
                        method_steps = method_steps
+
         )
 
     @staticmethod
@@ -368,6 +384,13 @@ class Dataset(object):
 
         return administrative_contact_full, administrative_contact_name, metadata_contact_full, metadata_contact_name, originator_full, originator
 
+class Occurrence(object):
+    def __init__(self, taxon,taxon_key, event_date,decimal_longitude = None,decimal_latitude = None ):
+        self.taxon = taxon
+        self.taxon_key = taxon_key
+        self.event_date = event_date
+        self.decimal_longitude = decimal_longitude
+        self.decimal_latitude = decimal_latitude
 
 class Group(object):
     def __init__(self, title, logo_url=None):
