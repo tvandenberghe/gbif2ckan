@@ -7,13 +7,13 @@ from conf import COUNTRY_CODE, DATASET_INFO,NETWORK_UUID
 
 def main():
     # Get all datasets published in the country
-    print("Get Datasets information from GBIF...")
+    print("GBIF: Get Datasets information...")
     #datasets = Dataset.get_all_datasets_country(COUNTRY_CODE)
     datasets = Dataset.get_all_datasets_network(NETWORK_UUID)
     print("{n} datasets found.".format(n=len(datasets)))
 
     # Let's also retrieve data about linked organizations
-    print("Get information about linked (publishing) organizations")
+    print("GBIF: Get information about linked (publishing) organizations")
     organizations = {}
     for dataset in datasets:
         organization_key = dataset.publishing_organization_key
@@ -46,7 +46,7 @@ def main():
         dataset.create_in_ckan(organizations)
 
     print("CKAN: Create a group for each dataset type...")
-
+    print("Import: done")
     # Sort datasets by type
     datasets_by_type = {}
     for d in datasets:

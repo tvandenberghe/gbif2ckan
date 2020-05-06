@@ -1,3 +1,4 @@
+
 from urllib.parse import urljoin, urlparse, parse_qs
 
 import jsonpickle as jsonpickle
@@ -17,7 +18,7 @@ class Dataset(object):
                  administrative_contact_full=None, administrative_contact_name=None, metadata_contact_full=None, metadata_contact_name=None,
                  originator_full=None, originator_name=None, website=None, resources=None, metadata_modified=None, metadata_created=None,
                  maintenance_frequency=None, keywords=None, license_id=None, northbound_lat=None, southbound_lat=None, eastbound_lon=None,
-                 westbound_lon=None, geo_desc=None, start_datetime=None, end_datetime=None, metadata_taxa=None, actual_taxa = None, occurrences=None, doi=None, doi_gbif=None, study_extent=None, quality_control=None, method_steps=None
+                 westbound_lon=None, geo_desc=None, start_datetime=None, end_datetime=None, occurrences=None, occurrence_count = None, doi=None, doi_gbif=None, study_extent=None, quality_control=None, method_steps=None
                  ):
         self.title = title
         self.name = dataset_title_to_name(self.title)
@@ -47,9 +48,8 @@ class Dataset(object):
         self.geo_desc = geo_desc
         self.start_datetime = start_datetime
         self.end_datetime = end_datetime
-        self.metadata_taxa = metadata_taxa
-        self.actual_taxa = actual_taxa
         self.occurrences = occurrences
+        self.occurrence_count=occurrence_count
         self.doi = doi
         self.doi_gbif = doi_gbif
         self.study_extent=study_extent
@@ -98,9 +98,8 @@ class Dataset(object):
                   'start_datetime':self.start_datetime,
                   'end_datetime':self.end_datetime,
                   'geo_desc': self.geo_desc,
-                  'taxonomic_coverage':json.dumps(self.metadata_taxa),
-                  'actual_taxa':json.dumps(self.actual_taxa),
-                  'occurrences': jsonpickle.encode(self.occurrences),
+                  #'occurrences': jsonpickle.encode(self.occurrences),
+                  'occurrence_count': self.occurrence_count,
                   'doi':self.doi,
                   'doi_gbif': self.doi_gbif,
                   'study_extent' : self.study_extent,
@@ -113,16 +112,14 @@ class Dataset(object):
                                           eastbound_lon=self.eastbound_lon, westbound_lon=self.westbound_lon, geo_desc=self.geo_desc)
         if geo_json is not None:
             params['extras'] = [{'key': 'spatial', 'value': '{"type": "Polygon","coordinates": ' + geo_json + '}'}]
-        improved_complex_keywords = []
-        improved_simple_keywords = []
+        params['tags']=[]
         for keyword in self.keywords:
             keyword = Keyword.create_in_ckan(keyword)
-            if keyword is not None:
+            if keyword is not None and keyword.name is not None and not "".__eq__(keyword.name.strip()):
                 if keyword.vocabulary_id is None:
-                    improved_simple_keywords.append(keyword)
+                    params['tags'].append({'name': keyword.name})
                 else:
-                    improved_complex_keywords.append(keyword)
-        params['tags'] = [{'name': k.name, 'vocabulary_id': k.vocabulary_id} for k in improved_complex_keywords]
+                    params['tags'].append({'name': keyword.name, 'vocabulary_id': keyword.vocabulary_id})
         if license is not None:
             params['license_id'] = self.license_id
         if self.method_steps is not None:
@@ -137,25 +134,48 @@ class Dataset(object):
                 raise CKANAPIException({"message": "Impossible to create dataset",
                                         "dataset": self,
                                         "error": r['error']})
-        # params={} #reset everything
-        # params['id'] = self.gbif_uuid
-        # params['metadata_created']= self.metadata_created
-        # params['metadata_modified']= self.metadata_modified
-        # r = make_ckan_api_call("api/action/package_update", params)
-
         for resource in self.resources:
             Resource.create_in_ckan(resource)
 
     def get_all_datasets_network(network_uuid):
         datasets = set([])
+        #i=0
         for dataset in Dataset.gbif_to_datasets("http://api.gbif.org/v1/network/" + network_uuid + "/constituents",{},True):
+            #if i<5:
             r = requests.get("http://api.gbif.org/v1/dataset/" + dataset.gbif_uuid)
             datasets.add(Dataset.gbif_to_dataset(r.json()))
+            #i=i+1
         return datasets
 
     def get_all_datasets_country(country_code):
         params = {"country": country_code}
         return Dataset.gbif_to_datasets("http://api.gbif.org/v1/dataset", params=params)
+
+    def get_gbif_taxa_list(dataset_key):
+        params = {"datasetKey": dataset_key, "facetLimit": 2000, "facet": "scientificName","datasetKey": dataset_key,"limit":0}
+        os = requests.get("https://api.gbif.org/v1/occurrence/search",params=params)
+        response = os.json()
+        return response.get('facets')[0].get('counts')
+
+    def get_gbif_occurrences(dataset_key_param, results):
+        os = requests.get("http://api.gbif.org/v1/occurrence/search", params=dataset_key_param)
+        try:
+            response = os.json()
+        except ValueError:
+            a =5
+        count = response.get('count')
+        results.extend(response.get('results'))
+        size=len(results)
+        while size < count:
+            dataset_key_param['offset'] = dataset_key_param['offset']  + 300
+            results = Dataset.get_gbif_occurrences(dataset_key_param,results)
+        return results
+
+    def get_gbif_occurrence_count(dataset_key_param):
+        os = requests.get("http://api.gbif.org/v1/occurrence/search", params=dataset_key_param)
+        response = os.json()
+        return response.get('count')
+
 
     def gbif_to_datasets(url, params={}, simple = False):
         datasets = set([])
@@ -203,8 +223,7 @@ class Dataset(object):
         quality_control = None
         method_steps = []
         maintenance_frequency = None
-        metadata_taxa = []
-        actual_taxa = set()
+        actual_taxa = []
         occurrences = []
 
         for e in single_gbif_dataset_json.get('endpoints'):
@@ -234,7 +253,16 @@ class Dataset(object):
 
         for kc in single_gbif_dataset_json.get('keywordCollections'):
             for k in kc['keywords']:
-                keyword = Keyword(name=k, vocabulary_id=kc['thesaurus'] if kc['thesaurus'] is not None else None)
+                thesaurus= kc['thesaurus'] if kc['thesaurus'] is not None else None
+                if thesaurus == 'http://gcmd.nasa.gov/User/difguide/':
+                    thesaurus='gcmd_keywords'
+                elif thesaurus=='http://gcmd.nasa.gov/User/difguide/iso_topics.html':
+                    thesaurus='gcmd_iso_topics'
+                elif thesaurus == 'GBIF Dataset Type Vocabulary: http://rs.gbif.org/vocabulary/gbif/dataset_type.xml':
+                    thesaurus='gbif_dataset_type'
+                elif thesaurus=='GBIF Dataset Subtype Vocabulary: http://rs.gbif.org/vocabulary/gbif/dataset_subtype.xml':
+                    thesaurus='gbif_dataset_subtype'
+                keyword = Keyword(name=k, vocabulary_id=thesaurus)
                 keywords.append(keyword)
 
         ipt_resource = Resource(package_id=ipt_id, url=dwca_url, format='zipped DwC archive',
@@ -280,20 +308,27 @@ class Dataset(object):
                 southbound_lat = -90
                 eastbound_lon = 180
                 westbound_lon = -180
+        else: #if no bounding boxes are given, give it a worldwide coverage
+            northbound_lat = 90
+            southbound_lat = -90
+            eastbound_lon = 180
+            westbound_lon = -180
         for tc in single_gbif_dataset_json.get('taxonomicCoverages'):
             for c in tc['coverages']:
-                metadata_taxa.append(c['scientificName'].replace('"',''))
+                taxon=Dataset.cleanup_taxon_name(c['scientificName'])
+                keyword = Keyword(name=taxon, vocabulary_id='taxonomic_coverage_taxa')
+                keywords.append(keyword)
         homepage = single_gbif_dataset_json.get('homepage')
-        dataset_key_param = {"datasetKey": gbif_uuid,"limit":1000}
-        os = requests.get("http://api.gbif.org/v1/occurrence/search", params=dataset_key_param)
-        response = os.json()
-        for r in response['results']:
-            occ= Occurrence(r.get('scientificName'),r.get('taxonKey'), r.get('eventDate'), r.get('decimalLongitude'), r.get('decimalLatitude'))
-            occurrences.append(occ)
 
-        occurrences.sort(key=lambda x: x.taxon, reverse=False)
-        for occ in occurrences:
-            actual_taxa.add(occ.taxon)
+        taxa = Dataset.get_gbif_taxa_list(gbif_uuid)
+        count = Dataset.get_gbif_occurrence_count(dataset_key_param = {"datasetKey": gbif_uuid, "limit": 1,"offset":0})
+        for t in taxa:
+            taxon=t.get('name').capitalize()
+            actual_taxa.append(taxon)
+        actual_taxa.sort()
+        for t in actual_taxa:
+            keyword = Keyword(name=t, vocabulary_id='actual_taxa')
+            keywords.append(keyword)
         return Dataset(title=title, gbif_uuid=gbif_uuid, id=ipt_id, dwca_url=dwca_url, dataset_type=dataset_type,
                        description=description,
                        publishing_organization_key=publishing_organization_key,
@@ -317,9 +352,8 @@ class Dataset(object):
                        geo_desc=geo_desc,
                        start_datetime=start_datetime,
                        end_datetime=end_datetime,
-                       metadata_taxa=metadata_taxa,
-                       actual_taxa=actual_taxa,
-                       occurrences=occurrences,
+#                       occurrences=occurrences,
+                       occurrence_count=count,
                        doi=(doi),
                        doi_gbif=doi_gbif,
                        study_extent=study_extent,
@@ -327,6 +361,10 @@ class Dataset(object):
                        method_steps = method_steps
 
         )
+
+    @staticmethod
+    def cleanup_taxon_name(name):
+        return name.replace('"','').replace('(','').replace(')','')
 
     @staticmethod
     def get_existing_datasets_ckan():
@@ -624,21 +662,17 @@ class Keyword(object):
         params = {}
         r = None
         if self.name is not None:
-            temp = self.vocabulary_id
             if self.vocabulary_id is not None:
-                v = Vocabulary(name=self.vocabulary_id, tags=[self])
+                v = Vocabulary(name=self.vocabulary_id, tags=[self],id=self.vocabulary_id)
                 vocabulary = v.create_or_update_in_ckan()
                 self.vocabulary_id = vocabulary.id  # move from a name-based vocabulary_id to a uuid based one.
                 params = {'vocabulary_id': self.vocabulary_id, 'name': self.name}
                 r = make_ckan_api_call("api/action/tag_create", params)
                 return self
-                # params={'vocabulary_id': self.vocabulary_id,'name':self.name}
-        #        else:
-        #            params = {'name': self.name}
-        #            r = make_ckan_api_call("api/action/tag_create", params)
-        #            if r is not None:
-        #                if not r['success']:
-        #                    print("Couldn't create keyword " + self.name)
+            else:
+                params = {'name': self.name}
+                r = make_ckan_api_call("api/action/tag_create", params)
+                return self
         else:
             print("Couldn't create keyword as it is empty")
         return self
@@ -678,21 +712,24 @@ class Vocabulary(object):
         existing_vocab = self.get_from_ckan()
         if existing_vocab is not None:
             self.id = existing_vocab.id
-            params = {'id': self.id, 'name': self.name,
-                      'tags': existing_vocab.tags + [{'name': k.name, 'vocabulary_id': self.id} for k in self.tags]}
+            params = {'id': self.id, 'name': self.name}#,
+             #         'tags': existing_vocab.tags + [{'name': k.name, 'vocabulary_id': self.id} for k in self.tags]}
             r = make_ckan_api_call("api/action/vocabulary_update", params)
         else:
-            params = {'name': self.name, 'tags': [{'name': k.name} for k in self.tags]}
+            params = {'name': self.name}#, 'tags': [{'name': k.name} for k in self.tags]}
             r = make_ckan_api_call("api/action/vocabulary_create", params)
         if r is not None:
             if not r['success']:
                 print("Couldn't create/update vocabulary " + self.name)
+            else:
+                id = r['result']['id']
+                self.id = id
         return self
 
     def get_from_ckan(self):
         params = {'id': self.name}
         r = make_ckan_api_call("api/action/vocabulary_show", params)
-        if r['success'] and r['result'] is not None:
+        if r is not None and r['success'] is not None and r['success'] and r['result'] is not None:
             return Vocabulary(id=r['result']['id'], name=r['result']['name'], tags=r['result']['tags'])
 
     @classmethod
